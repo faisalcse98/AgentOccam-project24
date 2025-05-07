@@ -87,6 +87,10 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         save_trace_enabled: bool = False,
         sleep_after_execution: float = 5.0,
         global_config = None,
+        playwright=None,
+        page=None,
+        context=None,
+        context_manager=None,
     ):
         # TODO: make Space[Action] = ActionSpace
         self.action_space = get_action_space()  # type: ignore[assignment]
@@ -98,6 +102,10 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         self.save_trace_enabled = save_trace_enabled
         self.sleep_after_execution = sleep_after_execution
         self.global_config = global_config
+        self.playwright = playwright
+        self.page = page
+        self.context = context
+        self.context_manager = context_manager
 
         match observation_type:
             case "html" | "accessibility_tree":
@@ -126,56 +134,9 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         )
 
     @beartype
-    def setup(self, config_file: Path | None = None) -> None:
-        def handle_dialog(dialog):
-            self.page.dialog_message = dialog.message
-            dialog.dismiss()
-        self.context_manager = sync_playwright()
-        self.playwright = self.context_manager.__enter__()
-        self.browser = self.playwright.chromium.launch(
-            headless=self.headless, slow_mo=self.slow_mo
-        )
-
-        if config_file:
-            with open(config_file, "r") as f:
-                instance_config = json.load(f)
-        else:
-            instance_config = {}
-
-        storage_state = instance_config.get("storage_state", None)
-        start_url = instance_config.get("start_url", None)
-        geolocation = instance_config.get("geolocation", None)
-
-        self.context = self.browser.new_context(
-            viewport=self.viewport_size,
-            storage_state=storage_state,
-            geolocation=geolocation,
-            device_scale_factor=1,
-        )
+    def setup(self) -> None:
         if self.save_trace_enabled:
             self.context.tracing.start(screenshots=True, snapshots=True)
-        if start_url:
-            start_urls = start_url.split(" |AND| ")
-            for url in start_urls:
-                page = self.context.new_page()
-                page.on("dialog", handle_dialog)
-                client = page.context.new_cdp_session(
-                    page
-                )  # talk to chrome devtools
-                if self.text_observation_type == "accessibility_tree":
-                    client.send("Accessibility.enable")
-                page.client = client  # type: ignore # TODO[shuyanzh], fix this hackey client
-                page.goto(url)
-            # set the first page as the current page
-            self.page = self.context.pages[0]
-            self.page.bring_to_front()
-        else:
-            self.page = self.context.new_page()
-            page.on("dialog", handle_dialog)
-            client = self.page.context.new_cdp_session(self.page)
-            if self.text_observation_type == "accessibility_tree":
-                client.send("Accessibility.enable")
-            self.page.client = client  # type: ignore
 
     def get_page_client(self, page: Page) -> CDPSession:
         return page.client  # type: ignore
@@ -203,7 +164,7 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
             - "storage_state": the storage state of the browser. It is a file path to a json file.
         """
         super().reset(seed=seed, options=options)
-        if self.reset_finished:
+        if self.reset_finished and self.context_manager:
             self.context_manager.__exit__()
 
         if options is not None and "config_file" in options:
@@ -237,7 +198,7 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
             self.context.tracing.stop(path=trace_path)
 
     def close(self) -> None:
-        if self.reset_finished:
+        if self.reset_finished and self.context_manager:
             self.context_manager.__exit__()
 
     def step(

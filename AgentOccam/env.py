@@ -1,4 +1,5 @@
 import json
+from abc import ABC, abstractmethod
 from browser_env import (
     create_id_based_action,
     create_id_based_actions,
@@ -14,15 +15,187 @@ from AgentOccam.obs_opt import (
 )
 
 
-class WebArenaEnvironmentWrapper():
-    def __init__(self, config_file, max_browser_rows=300, max_steps=50, slow_mo=1, observation_type="accessibility_tree", current_viewport_only=False, viewport_size={"width": 1280, "height": 720}, headless=False, global_config=None):
+class BaseEnviromentWrapper(ABC):
+    @abstractmethod
+    def reset(self):
+        pass
+
+    @abstractmethod
+    def close(self):
+        pass
+
+    @abstractmethod        
+    def get_url(self):
+        pass
+    
+    @abstractmethod
+    def get_objective(self):
+        pass
+    
+    @abstractmethod
+    def get_sites(self):
+        pass
+        
+    @abstractmethod
+    def observation(self): 
+        pass
+    
+    @abstractmethod
+    def done(self):
+        pass
+    
+    @abstractmethod
+    def status(self):
+        pass
+        
+    @abstractmethod
+    def step(self, action):
+        pass
+
+
+class DefaultEnviromentWrapper(BaseEnviromentWrapper):
+    def __init__(
+        self,
+        objective,
+        url,
+        max_browser_rows=300,
+        max_steps=50,
+        slow_mo=1,
+        observation_type="accessibility_tree", 
+        current_viewport_only=False,
+        viewport_size={"width": 1280, "height": 720},
+        headless=False,
+        global_config=None,
+        playwright=None,
+        page=None,
+        context=None,
+        context_manager=None,
+    ):
+        self.brower_env = ScriptBrowserEnv(
+            headless=headless,
+            slow_mo=slow_mo,
+            observation_type=observation_type,
+            current_viewport_only=current_viewport_only,
+            viewport_size=viewport_size,
+            global_config=global_config,
+            playwright=playwright,
+            page=page,
+            context=context,
+            context_manager=context_manager,
+        )
+        self.global_config = global_config
+        
+        self.obs, self.info = self.brower_env.reset()
+        self.terminated = False
+        self.objective = objective
+        self.url = url
+        self.max_browser_rows = max_browser_rows
+        self.max_steps = max_steps
+        self.steps = 0
+        self.is_done = False
+        self.reward = 0.0
+        
+        self.trajectory: Trajectory = []
+        
+    def reset(self):
+        self.obs, self.info = self.brower_env.reset()
+
+    def close(self):
+        self.brower_env.close()
+        
+    def get_url(self):
+        return self.url
+    
+    def get_objective(self):
+        return self.objective 
+    
+    def get_sites(self):
+        return []
+        
+    def observation(self): 
+        self.url = self.brower_env.page.url
+        if self.global_config and self.global_config.env.prune:
+            root_node = self.obs["text"][1]
+            DOM_root_node = prune_tree(objective=self.objective, root_node=root_node, mode="node")
+            DOM_str = translate_node_to_str(node=DOM_root_node, mode="concise")
+            return {"text": DOM_str, "image": self.obs["image"], "node": DOM_root_node}
+        else:
+            browser_content = self.obs["text"][0]
+            browser_content = browser_content.split("\n")[:self.max_browser_rows] 
+            browser_content = "\n".join(browser_content)
+            return browser_content
+    
+    def done(self):
+        if self.is_done:
+            return True
+        return False
+    
+    def status(self):
+        return {'done': self.is_done, 'reward': self.reward, 'success': float(self.reward > 0), 'num_actions': self.steps}
+    
+    def step(self, action):
+        self.steps = self.steps + 1
+        print(f"[Step {self.steps}] {action}")
+        print("*"*100)
+        if self.steps > self.max_steps:
+            print(f"Steps {self.steps} exceeded maximum {self.max_steps}")
+            self.is_done = True
+            action_cmd = create_id_based_action(f"stop [Trajectory failed: Steps {self.steps} exceeded maximum {self.max_steps}.]")
+            return self.status()
+
+        if action is None or action == "":
+            action_cmds = []
+        else:
+            try:
+                action_cmds = create_id_based_actions(action)
+                if not action_cmds:
+                    return False
+            except Exception as e:
+                print(f"Invalid action syntax: {e}")
+                action_cmds = []
+
+        for action_cmd in action_cmds:
+            try:
+                self.obs, _, self.terminated, _, self.info = self.brower_env.step(action_cmd) 
+                self.update_objective_completion(action_cmd)
+            except Exception as e:
+                print(f"Error occurred while taking step: {e}")
+            
+        return self.status()
+    
+    def update_objective_completion(self, action_cmd=None):
+        if action_cmd and action_cmd["action_type"] == ActionTypes.STOP:
+            self.is_done = True
+
+
+class WebArenaEnvironmentWrapper(BaseEnviromentWrapper):
+    def __init__(
+        self,
+        config_file,
+        max_browser_rows=300,
+        max_steps=50,
+        slow_mo=1,
+        observation_type="accessibility_tree", 
+        current_viewport_only=False,
+        viewport_size={"width": 1280, "height": 720},
+        headless=False,
+        global_config=None,
+        playwright=None,
+        page=None,
+        context=None,
+        context_manager=None,
+    ):
         self.webarena_env = ScriptBrowserEnv(
                     headless=headless,
                     slow_mo=slow_mo,
                     observation_type=observation_type,
                     current_viewport_only=current_viewport_only,
                     viewport_size=viewport_size,
-                    global_config=global_config
+                    global_config=global_config,
+                    playwright=playwright,
+                    page=page,
+                    context=context,
+                    context_manager=context_manager,
                 )
         self.config_file = config_file
         with open(self.config_file, "r") as f:

@@ -5,7 +5,7 @@ import argparse
 import os
 import shutil
 
-from AgentOccam.env import WebArenaEnvironmentWrapper
+from AgentOccam.env import DefaultEnviromentWrapper, WebArenaEnvironmentWrapper
 
 from AgentOccam.AgentOccam import AgentOccam
 from webagents_step.utils.data_prep import *
@@ -15,6 +15,7 @@ from AgentOccam.prompts import AgentOccam_prompt
 from webagents_step.prompts.webarena import step_fewshot_template_adapted, step_fewshot_template
 
 from AgentOccam.utils import EVALUATOR_DIR
+from playwright.sync_api import sync_playwright
 
 def run():
     parser = argparse.ArgumentParser(
@@ -83,7 +84,14 @@ def run():
     else:
         raise NotImplementedError(f"{config.agent.type} not implemented")
 
+    def handle_dialog(dialog):
+        page.dialog_message = dialog.message
+        dialog.dismiss()
     
+    slow_mo = 1
+    viewport_size = {"width": 1920, "height": 1080}
+    observation_type="accessibility_tree"
+
     for config_file in config_file_list:
         with open(config_file, "r") as f:
             task_config = json.load(f)
@@ -91,22 +99,96 @@ def run():
         if os.path.exists(os.path.join(dstdir, f"{task_config['task_id']}.json")):
             print(f"Skip {task_config['task_id']}.")
             continue
-        if task_config['task_id'] in list(range(600, 650))+list(range(681, 689)):
-            print("Reddit post task. Sleep 30 mins.")
-            time.sleep(1800)
+
+        # No need to sleep for 30 mins for Reddit post tasks as alternative way is available to increase the rate limit
+        # if task_config['task_id'] in list(range(600, 650))+list(range(681, 689)):
+        #     print("Reddit post task. Sleep 30 mins.")
+        #     time.sleep(1800)
+
+        # Initialize playwright, page, and context
+        context_manager = sync_playwright()
+        playwright = context_manager.__enter__()
+        browser = playwright.chromium.launch(
+            headless=config.env.headless, slow_mo=slow_mo
+        )
+
+        storage_state = task_config.get("storage_state", None)
+        start_url = task_config.get("start_url", None)
+        geolocation = task_config.get("geolocation", None)
+
+        context = browser.new_context(
+            viewport=viewport_size,
+            storage_state=storage_state,
+            geolocation=geolocation,
+            device_scale_factor=1,
+        )
+
+        if start_url:
+            start_urls = start_url.split(" |AND| ")
+            for url in start_urls:
+                page = context.new_page()
+                page.on("dialog", handle_dialog)
+                client = page.context.new_cdp_session(
+                    page
+                )  # talk to chrome devtools
+                if observation_type == "accessibility_tree":
+                    client.send("Accessibility.enable")
+                page.client = client  # type: ignore # TODO[shuyanzh], fix this hackey client
+                page.goto(url)
+            # set the first page as the current page
+            page = context.pages[0]
+            page.bring_to_front()
+        else:
+            page = context.new_page()
+            page.on("dialog", handle_dialog)
+            client = page.context.new_cdp_session(page)
+            if observation_type == "accessibility_tree":
+                client.send("Accessibility.enable")
+            page.client = client  # type: ignore
+
+        """
         env = WebArenaEnvironmentWrapper(config_file=config_file, 
                                         max_browser_rows=config.env.max_browser_rows, 
                                         max_steps=config.max_steps, 
-                                        slow_mo=1, 
-                                        observation_type="accessibility_tree", 
+                                        slow_mo=slow_mo, 
+                                        observation_type=observation_type, 
                                         current_viewport_only=current_viewport_only, 
-                                        viewport_size={"width": 1920, "height": 1080}, 
+                                        viewport_size=viewport_size, 
                                         headless=config.env.headless,
-                                        global_config=config)
+                                        global_config=config,
+                                        playwright=playwright,
+                                        page=page,
+                                        context=context,
+                                        context_manager=context_manager)
+        """
+        env = DefaultEnviromentWrapper(
+            objective=task_config["intent"],
+            url=start_url,
+            max_browser_rows=config.env.max_browser_rows, 
+            max_steps=config.max_steps, 
+            slow_mo=slow_mo, 
+            observation_type=observation_type, 
+            current_viewport_only=current_viewport_only, 
+            viewport_size=viewport_size, 
+            headless=config.env.headless,
+            global_config=config,
+            playwright=playwright,
+            page=page,
+            context=context,
+            context_manager=context_manager,
+        )
         
         agent = agent_init()
         objective = env.get_objective()
-        status = agent.act(objective=objective, env=env)
+        
+        # Run AgentOccam agent without ActionEngine compatibility
+        # status = agent.act(objective=objective, env=env)
+
+        # Run AgentOccam agent with ActionEngine compatibility
+        agent.pre_execute_action(objective, env)
+        while(not agent.is_completed(env)):
+            status = agent.execute_action(env)
+
         env.close()
 
         if config.logging:
