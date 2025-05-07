@@ -13,3 +13,9 @@ config_files/tasks/test.raw.json
 debug.png
 .auth/*
 *__pycache__*
+.env
+play-AgentOccam.txt
+trash-AgentOccam.txt
+.vscode/*
+marked-AgentOccam.png
+screenshot-AgentOccam.png

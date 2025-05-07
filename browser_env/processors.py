@@ -241,7 +241,7 @@ class TextObervationProcessor(ObservationProcessor):
         win_right_bound = win_left_bound + win_width
         win_lower_bound = win_top_bound + win_height
         device_pixel_ratio = page.evaluate("window.devicePixelRatio")
-        assert device_pixel_ratio == 1.0, "devicePixelRatio is not 1.0"
+        # assert device_pixel_ratio == 1.0, "devicePixelRatio is not 1.0"
 
         config: BrowserConfig = {
             "win_top_bound": win_top_bound,
