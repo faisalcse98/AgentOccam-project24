@@ -7,7 +7,7 @@ from typing import Any, TypedDict, Union
 import numpy as np
 import numpy.typing as npt
 from gymnasium import spaces
-from playwright.sync_api import CDPSession, Page, ViewportSize
+from playwright.async_api import CDPSession, Page, ViewportSize
 
 from browser_env.constants import (
     ASCII_CHARSET,
@@ -211,13 +211,13 @@ class TextObervationProcessor(ObservationProcessor):
             create_empty_metadata()
         )  # use the store meta data of this observation type
 
-    def fetch_browser_info(
+    async def fetch_browser_info(
         self,
         page: Page,
         client: CDPSession,
     ) -> BrowserInfo:
         # extract domtree
-        tree = client.send(
+        tree = await client.send(
             "DOMSnapshot.captureSnapshot",
             {
                 "computedStyles": [],
@@ -234,13 +234,13 @@ class TextObervationProcessor(ObservationProcessor):
         tree["documents"][0]["layout"]["bounds"] = bounds
 
         # extract browser info
-        win_top_bound = page.evaluate("window.pageYOffset")
-        win_left_bound = page.evaluate("window.pageXOffset")
-        win_width = page.evaluate("window.screen.width")
-        win_height = page.evaluate("window.screen.height")
+        win_top_bound = await page.evaluate("window.pageYOffset")
+        win_left_bound = await page.evaluate("window.pageXOffset")
+        win_width = await page.evaluate("window.screen.width")
+        win_height = await page.evaluate("window.screen.height")
         win_right_bound = win_left_bound + win_width
         win_lower_bound = win_top_bound + win_height
-        device_pixel_ratio = page.evaluate("window.devicePixelRatio")
+        device_pixel_ratio = await page.evaluate("window.devicePixelRatio")
         assert device_pixel_ratio > 1.0-0.05 and device_pixel_ratio < 1.0+0.05, "devicePixelRatio is not 1.0"
 
         config: BrowserConfig = {
@@ -260,15 +260,15 @@ class TextObervationProcessor(ObservationProcessor):
         return info
 
     @staticmethod
-    def get_bounding_client_rect(
+    async def get_bounding_client_rect(
         client: CDPSession, backend_node_id: str
     ) -> dict[str, Any]:
         try:
-            remote_object = client.send(
+            remote_object = await client.send(
                 "DOM.resolveNode", {"backendNodeId": int(backend_node_id)}
             )
             remote_object_id = remote_object["object"]["objectId"]
-            response = client.send(
+            response = await client.send(
                 "Runtime.callFunctionOn",
                 {
                     "objectId": remote_object_id,
@@ -324,7 +324,7 @@ class TextObervationProcessor(ObservationProcessor):
         ratio = overlap_width * overlap_height / width * height
         return ratio
     
-    def element_is_visible(self, page, element_id):
+    async def element_is_visible(self, page: Page, element_id):
         def _get_element_in_viewport_ratio(
             elem_left_bound: float,
             elem_top_bound: float,
@@ -344,6 +344,8 @@ class TextObervationProcessor(ObservationProcessor):
                     overlap = 0
                 
                 return overlap
+            # End of calculate_overlap
+
             elem_right_bound = elem_left_bound + width
             elem_lower_bound = elem_top_bound + height
 
@@ -360,13 +362,15 @@ class TextObervationProcessor(ObservationProcessor):
                 return ratio
             except:
                 return 1 #TODO
+        # End of _get_element_in_viewport_ratio
+
         try:
-            browser_info = self.fetch_browser_info(page, page.client)
+            browser_info = await self.fetch_browser_info(page, page.client)
         except Exception:
-            page.wait_for_load_state("load", timeout=500)
-            browser_info = self.fetch_browser_info(page, page.client)
+            await page.wait_for_load_state("load", timeout=500)
+            browser_info = await self.fetch_browser_info(page, page.client)
         
-        response = self.get_bounding_client_rect(
+        response = await self.get_bounding_client_rect(
             page.client, self.obs_nodes_info[element_id]["backend_id"]
         )
 
@@ -692,15 +696,16 @@ class TextObervationProcessor(ObservationProcessor):
         html = dfs(0, 0)
         return html, obs_nodes_info
 
-    def fetch_page_accessibility_tree(
+    async def fetch_page_accessibility_tree(
         self,
         info: BrowserInfo,
         client: CDPSession,
         current_viewport_only: bool,
     ) -> AccessibilityTree:
-        accessibility_tree: AccessibilityTree = client.send(
+        accessibility_tree_data = await client.send(
             "Accessibility.getFullAXTree", {}
-        )["nodes"]
+        )
+        accessibility_tree: AccessibilityTree = accessibility_tree_data["nodes"]
 
         # a few nodes are repeated in the accessibility tree
         seen_ids = set()
@@ -722,7 +727,7 @@ class TextObervationProcessor(ObservationProcessor):
                 # always inside the viewport
                 node["union_bound"] = [0.0, 0.0, 10.0, 10.0]
             else:
-                response = self.get_bounding_client_rect(
+                response = await self.get_bounding_client_rect(
                     client, backend_node_id
                 )
                 if response.get("result", {}).get("subtype", "") == "error":
@@ -917,7 +922,7 @@ class TextObervationProcessor(ObservationProcessor):
 
         return "\n".join(clean_lines)
 
-    def process(self, page: Page, client: CDPSession, context: str) -> str:
+    async def process(self, page: Page, client: CDPSession, context: str) -> str:
         # get the tab info
         open_tabs = page.context.pages
         # try:
@@ -954,10 +959,10 @@ class TextObervationProcessor(ObservationProcessor):
 
         
         try:
-            browser_info = self.fetch_browser_info(page, client)
+            browser_info = await self.fetch_browser_info(page, client)
         except Exception:
-            page.wait_for_load_state("load", timeout=500)
-            browser_info = self.fetch_browser_info(page, client)
+            await page.wait_for_load_state("load", timeout=500)
+            browser_info = await self.fetch_browser_info(page, client)
         
         if self.observation_type == "html":
             import time
@@ -975,9 +980,9 @@ class TextObervationProcessor(ObservationProcessor):
             raw_html, content, obs_nodes_info, hp = self.parse_my_html(dom_tree)
             print('[parse]', time.time() - stt)
             
-            window_height = page.evaluate("window.innerHeight")
-            page_height = page.evaluate('document.documentElement.scrollHeight') / window_height
-            position = page.evaluate("window.scrollY") / window_height
+            window_height = await page.evaluate("window.innerHeight")
+            page_height = await page.evaluate('document.documentElement.scrollHeight') / window_height
+            position = await page.evaluate("window.scrollY") / window_height
             
             self.obs_nodes_info = obs_nodes_info
             self.meta_data["obs_nodes_info"] = obs_nodes_info
@@ -993,7 +998,7 @@ class TextObervationProcessor(ObservationProcessor):
             self.meta_data["tab_title"] = tab_title_str
 
         elif self.observation_type == "accessibility_tree":
-            accessibility_tree = self.fetch_page_accessibility_tree(
+            accessibility_tree = await self.fetch_page_accessibility_tree(
                 browser_info,
                 client,
                 current_viewport_only=self.current_viewport_only,
@@ -1023,10 +1028,10 @@ class TextObervationProcessor(ObservationProcessor):
     def get_node_info_by_element_id(self, AXTreeId):
         return self.node_root.search_node_by_id(AXTreeId)
 
-    def get_element_center(self, element_id: str, page) -> tuple[float, float]:
+    async def get_element_center(self, element_id: str, page: Page) -> tuple[float, float]:
         node = self.obs_nodes_info[element_id]
         backend_node_id = str(node["backend_id"])
-        response = self.get_bounding_client_rect(
+        response = await self.get_bounding_client_rect(
             page.client, backend_node_id
         )
         x = response["result"]["value"]["x"]
@@ -1048,13 +1053,13 @@ class ImageObservationProcessor(ObservationProcessor):
         self.observation_tag = "image"
         self.meta_data = create_empty_metadata()
 
-    def process(self, page: Page, client: CDPSession, context: str) -> npt.NDArray[np.uint8]:
+    async def process(self, page: Page, client: CDPSession, context: str) -> npt.NDArray[np.uint8]:
         try:
-            screenshot = png_bytes_to_numpy(page.screenshot(full_page=(not self.current_viewport_only)))
+            screenshot = png_bytes_to_numpy(await page.screenshot(full_page=(not self.current_viewport_only)))
             screenshot = screenshot[:2*screenshot.shape[1], :, :]
         except:
-            page.wait_for_event("load")
-            screenshot = png_bytes_to_numpy(page.screenshot(full_page=(not self.current_viewport_only)))
+            await page.wait_for_event("load")
+            screenshot = png_bytes_to_numpy(await page.screenshot(full_page=(not self.current_viewport_only)))
         return screenshot
 
 
@@ -1101,11 +1106,11 @@ class ObservationHandler:
 
         return spaces.Dict({"text": text_space, "image": image_space})
 
-    def get_observation(
+    async def get_observation(
         self, page: Page, client: CDPSession, context: str = '',
     ) -> dict[str, Observation]:
-        text_obs = self.text_processor.process(page, client, context)
-        image_obs = self.image_processor.process(page, client, context)
+        text_obs = await self.text_processor.process(page, client, context)
+        image_obs = await self.image_processor.process(page, client, context)
         return {"text": text_obs, "image": image_obs}
 
     def get_observation_metadata(self) -> dict[str, ObservationMetadata]:

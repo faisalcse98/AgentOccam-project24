@@ -1,12 +1,13 @@
-from AgentOccam.obs_opt import parse_node_descendants, parse_node_ancestors, parse_node_siblings, action_set_invisible, action_set_visible, action_set_visible_if_with_name, translate_node_to_str, construct_new_DOM_with_visible_nodes
-from AgentOccam.llms.claude import call_claude, call_claude_with_messages, arrange_message_for_claude
-from AgentOccam.llms.mistral import call_mistral, call_mistral_with_messages, arrange_message_for_mistral
-from AgentOccam.llms.cohere import call_cohere, call_cohere_with_messages, arrange_message_for_cohere
-from AgentOccam.llms.llama import call_llama, call_llama_with_messages, arrange_message_for_llama
-from AgentOccam.llms.titan import call_titan, call_titan_with_messages, arrange_message_for_titan
-from AgentOccam.llms.gpt import call_azureopenai, call_azureopenai_with_messages, arrange_message_for_azureopenai
-from AgentOccam.llms.gemini import call_gemini, call_gemini_with_messages, arrange_message_for_gemini
-from AgentOccam.utils import CURRENT_DIR, HOMEPAGE_URL
+from ..AgentOccam.obs_opt import parse_node_descendants, parse_node_ancestors, parse_node_siblings, action_set_invisible, action_set_visible, action_set_visible_if_with_name, translate_node_to_str, construct_new_DOM_with_visible_nodes
+from ..AgentOccam.llms.claude import call_claude, call_claude_with_messages, arrange_message_for_claude
+from ..AgentOccam.llms.mistral import call_mistral, call_mistral_with_messages, arrange_message_for_mistral
+from ..AgentOccam.llms.cohere import call_cohere, call_cohere_with_messages, arrange_message_for_cohere
+from ..AgentOccam.llms.llama import call_llama, call_llama_with_messages, arrange_message_for_llama
+from ..AgentOccam.llms.titan import call_titan, call_titan_with_messages, arrange_message_for_titan
+from ..AgentOccam.llms.gpt import call_azureopenai, call_azureopenai_with_messages, arrange_message_for_azureopenai
+from ..AgentOccam.llms.gemini import call_gemini, call_gemini_with_messages, arrange_message_for_gemini
+from ..AgentOccam.utils import CURRENT_DIR, HOMEPAGE_URL
+from ..AgentOccam.env import BaseEnviromentWrapper
 
 from typing import Dict
 import re
@@ -1373,62 +1374,8 @@ class AgentOccam:
     def get_trajectory(self):
         return self.trajectory
 
-    def act(self, objective, env):
-        self.objective = objective
-        self.sites = env.get_sites()
-        observation = env.observation()
-        url = env.get_url()
-        self.update_online_state(url=url, observation=observation)
-        self.init_actor()
-        self.init_critic()
-        self.init_judge()
-        while not env.done():
-            observation = env.observation()
-            url = env.get_url()
-            self.update_online_state(url=url, observation=observation)
-            self.actor.update_online_state(url=url, observation=observation)
-            self.critic.update_online_state(url=url, observation=observation)
-            self.judge.update_online_state(url=url, observation=observation)
-            action_elements, action_element_list = self.predict_action()
-            action = action_elements["action"]
-            navigation_action = action_elements["action"] if not action_elements.get("navigation action", "") else action_elements.get("navigation action", "")
-            status = env.step(navigation_action)
-            if navigation_action and self.is_navigation(action=navigation_action) and status == False: # means invalid action
-                flaw_node = self.actor.active_node
-                flaw_node.note.append(f"STEP {self.get_step()}: You generate action \"{action}\", which has INVALID syntax. Strictly follow the action specifications.")          
-            DOCUMENTED_INTERACTION_ELEMENT_KEY_TO_CONTENT_MAP = {
-                "observation": observation,
-                "action": action,
-                "url": url,
-                "plan": self.get_actor_active_plan(),
-                "reason": action_elements.get("reason", ""),
-                "observation highlight": action_elements.get("observation highlight", ""),
-                "retained element ids": action_elements.get("retained element ids", []),
-                "observation summary": action_elements.get("observation description", "")                  
-            }
-            self.actor.update_history(**DOCUMENTED_INTERACTION_ELEMENT_KEY_TO_CONTENT_MAP)
-            self.actor.del_observation_node()
-            assert self.actor.equal_history_length()
-
-            if len(action_element_list) > 1:
-                if self.config.others.logging:
-                    self.log_step(
-                        status=status if "status" in locals() and isinstance(status, dict) else env.status(),
-                        plan=self.get_actor_active_plan(),
-                        **action_elements,
-                        **{f"actor {i}:{k}": _action_elements[k] for i, _action_elements in enumerate(action_element_list) for k in _action_elements.keys() if k != "input" and k != "instruction"}
-                    )
-            else:
-                if self.config.others.logging:
-                    self.log_step(
-                        status=status if "status" in locals() and isinstance(status, dict) else env.status(),
-                        plan=self.get_actor_active_plan(),
-                        **action_elements,
-                    )
-
-        return status if "status" in locals() and isinstance(status, dict) else env.status()
-    
-    def pre_execute_action(self, objective, env):
+    async def pre_execute_action(self, objective: str, env: BaseEnviromentWrapper):
+        await env.reset()
         self.objective = objective
         self.sites = env.get_sites()
         observation = env.observation()
@@ -1438,7 +1385,7 @@ class AgentOccam:
         self.init_critic()
         self.init_judge()
 
-    def execute_action(self, env):
+    async def execute_action(self, env: BaseEnviromentWrapper):
         observation = env.observation()
         url = env.get_url()
         self.update_online_state(url=url, observation=observation)
@@ -1448,7 +1395,7 @@ class AgentOccam:
         action_elements, action_element_list = self.predict_action()
         action = action_elements["action"]
         navigation_action = action_elements["action"] if not action_elements.get("navigation action", "") else action_elements.get("navigation action", "")
-        status = env.step(navigation_action)
+        status = await env.step(navigation_action)
         if navigation_action and self.is_navigation(action=navigation_action) and status == False: # means invalid action
             flaw_node = self.actor.active_node
             flaw_node.note.append(f"STEP {self.get_step()}: You generate action \"{action}\", which has INVALID syntax. Strictly follow the action specifications.")          
@@ -1483,7 +1430,7 @@ class AgentOccam:
                 )
         return status if "status" in locals() and isinstance(status, dict) else env.status()
     
-    def is_completed(self, env) -> bool:
+    def is_completed(self, env: BaseEnviromentWrapper) -> bool:
         return env.done()
     
     def log_step(self, status, **kwargs):

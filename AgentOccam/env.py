@@ -1,6 +1,7 @@
 import json
+import re
 from abc import ABC, abstractmethod
-from browser_env import (
+from ..browser_env import (
     create_id_based_action,
     create_id_based_actions,
     StateInfo,
@@ -8,8 +9,8 @@ from browser_env import (
     ActionTypes,
     ScriptBrowserEnv
 )
-from evaluation_harness.evaluators import evaluator_router
-from AgentOccam.obs_opt import (
+from ..evaluation_harness.evaluators import evaluator_router
+from ..AgentOccam.obs_opt import (
     prune_tree,
     translate_node_to_str,
 )
@@ -17,11 +18,11 @@ from AgentOccam.obs_opt import (
 
 class BaseEnviromentWrapper(ABC):
     @abstractmethod
-    def reset(self):
+    async def reset(self):
         pass
 
     @abstractmethod
-    def close(self):
+    async def close(self):
         pass
 
     @abstractmethod        
@@ -49,7 +50,7 @@ class BaseEnviromentWrapper(ABC):
         pass
         
     @abstractmethod
-    def step(self, action):
+    async def step(self, action):
         pass
 
 
@@ -85,7 +86,7 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
         )
         self.global_config = global_config
         
-        self.obs, self.info = self.brower_env.reset()
+        # self.obs, self.info = self.brower_env.reset()
         self.terminated = False
         self.objective = objective
         self.url = url
@@ -97,11 +98,11 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
         
         self.trajectory: Trajectory = []
         
-    def reset(self):
-        self.obs, self.info = self.brower_env.reset()
+    async def reset(self):
+        self.obs, self.info = await self.brower_env.reset()
 
-    def close(self):
-        self.brower_env.close()
+    async def close(self):
+        await self.brower_env.close()
         
     def get_url(self):
         return self.url
@@ -131,12 +132,30 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
         return False
     
     def status(self):
-        return {'done': self.is_done, 'reward': self.reward, 'success': float(self.reward > 0), 'num_actions': self.steps}
+        return {
+            'done': self.is_done, 
+            'reward': self.reward, 
+            'success': float(self.reward > 0), 
+            'num_actions': self.steps,
+            'action_type': self.action_type,
+            'message': self.message,
+            'description': self.description
+        }
     
-    def step(self, action):
+    pattern = r'^(\w+)\s+\[([^\]]+)\](?:\s+\[([^\]]+)\]\s+\[([^\]]+)\])?'
+
+    async def step(self, action):
         self.steps = self.steps + 1
         print(f"[Step {self.steps}] {action}")
         print("*"*100)
+        match = re.match(self.pattern, action)
+        if match:
+            self.action_type = match.group(1)
+            self.message = match.group(2)
+        else:
+            self.action_type = "unknown"
+            self.message = "unknown"
+        self.description = action
         if self.steps > self.max_steps:
             print(f"Steps {self.steps} exceeded maximum {self.max_steps}")
             self.is_done = True
@@ -156,7 +175,7 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
 
         for action_cmd in action_cmds:
             try:
-                self.obs, _, self.terminated, _, self.info = self.brower_env.step(action_cmd) 
+                self.obs, _, self.terminated, _, self.info = await self.brower_env.step(action_cmd) 
                 self.update_objective_completion(action_cmd)
             except Exception as e:
                 print(f"Error occurred while taking step: {e}")

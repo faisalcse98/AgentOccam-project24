@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import re
@@ -5,36 +6,24 @@ import argparse
 import os
 import shutil
 
-from AgentOccam.env import DefaultEnviromentWrapper, WebArenaEnvironmentWrapper
+from .AgentOccam.env import DefaultEnviromentWrapper, WebArenaEnvironmentWrapper
 
-from AgentOccam.AgentOccam import AgentOccam
-from webagents_step.utils.data_prep import *
-from webagents_step.agents.step_agent import StepAgent
+from .AgentOccam.AgentOccam import AgentOccam
+from .webagents_step.utils.data_prep import *
+from .webagents_step.agents.step_agent import StepAgent
 
-from AgentOccam.prompts import AgentOccam_prompt
-from webagents_step.prompts.webarena import step_fewshot_template_adapted, step_fewshot_template
+from .AgentOccam.prompts import AgentOccam_prompt
+from .webagents_step.prompts.webarena import step_fewshot_template_adapted, step_fewshot_template
 
-from AgentOccam.utils import EVALUATOR_DIR
-from playwright.sync_api import sync_playwright
+from .AgentOccam.utils import EVALUATOR_DIR
+from playwright.async_api import async_playwright, Playwright
+from typing_extensions import Sequence
 
-def run():
-    parser = argparse.ArgumentParser(
-        description="Only the config file argument should be passed"
-    )
-    parser.add_argument(
-        "--config", type=str, required=True, help="yaml config file location"
-    )
-    args = parser.parse_args()
-    with open(args.config, "r") as file:
+async def run(task: str, cookies_to_add: Sequence[dict], start_url: str):
+    agent_occam_config_file_path = os.path.join("src", "project24", "agentoccam", "AgentOccam", "configs", "AgentOccam.yml")
+    with open(agent_occam_config_file_path, "r") as file:
         config = DotDict(yaml.safe_load(file))
     
-    if config.logging:
-        if config.logname:
-            dstdir = f"{config.logdir}/{config.logname}"
-        else:
-            dstdir = f"{config.logdir}/{time.strftime('%Y%m%d-%H%M%S')}"
-        os.makedirs(dstdir, exist_ok=True)
-        shutil.copyfile(args.config, os.path.join(dstdir, args.config.split("/")[-1]))
     random.seed(42)
     
     config_file_list = []
@@ -57,30 +46,6 @@ def run():
             prompt_dict = {k: v for k, v in AgentOccam_prompt.__dict__.items() if isinstance(v, dict)},
             config = config.agent,
         )
-    elif config.agent.type == "AgentOccam-SteP":
-            agent_init = lambda: StepAgent(
-            root_action = config.agent.root_action,
-            action_to_prompt_dict = {k: v for k, v in step_fewshot_template_adapted.__dict__.items() if isinstance(v, dict)},
-            low_level_action_list = config.agent.low_level_action_list,
-            max_actions=config.env.max_env_steps,
-            verbose=config.verbose,
-            logging=config.logging,
-            debug=config.debug,
-            model=config.agent.model_name,
-            prompt_mode=config.agent.prompt_mode,
-            )    
-    elif config.agent.type == "SteP-replication":
-        agent_init = lambda: StepAgent(
-            root_action = config.agent.root_action,
-            action_to_prompt_dict = {k: v for k, v in step_fewshot_template.__dict__.items() if isinstance(v, dict)},
-            low_level_action_list = config.agent.low_level_action_list,
-            max_actions=config.env.max_env_steps,
-            verbose=config.verbose,
-            logging=config.logging,
-            debug=config.debug,
-            model=config.agent.model_name,
-            prompt_mode=config.agent.prompt_mode,
-        )
     else:
         raise NotImplementedError(f"{config.agent.type} not implemented")
 
@@ -96,9 +61,6 @@ def run():
         with open(config_file, "r") as f:
             task_config = json.load(f)
             print(f"Task {task_config['task_id']}.")
-        if os.path.exists(os.path.join(dstdir, f"{task_config['task_id']}.json")):
-            print(f"Skip {task_config['task_id']}.")
-            continue
 
         # No need to sleep for 30 mins for Reddit post tasks as alternative way is available to increase the rate limit
         # if task_config['task_id'] in list(range(600, 650))+list(range(681, 689)):
@@ -106,44 +68,46 @@ def run():
         #     time.sleep(1800)
 
         # Initialize playwright, page, and context
-        context_manager = sync_playwright()
-        playwright = context_manager.__enter__()
-        browser = playwright.chromium.launch(
+        #context_manager = async_playwright()
+        playwright: Playwright = await async_playwright().start()
+        browser = await playwright.chromium.launch(
             headless=config.env.headless, slow_mo=slow_mo
         )
 
         storage_state = task_config.get("storage_state", None)
-        start_url = task_config.get("start_url", None)
+        #start_url = task_config.get("start_url", None)
         geolocation = task_config.get("geolocation", None)
 
-        context = browser.new_context(
+        context = await browser.new_context(
             viewport=viewport_size,
             storage_state=storage_state,
             geolocation=geolocation,
             device_scale_factor=1,
         )
 
+        #start_url = "http://4.242.244.54:9999"
         if start_url:
-            start_urls = start_url.split(" |AND| ")
-            for url in start_urls:
-                page = context.new_page()
-                page.on("dialog", handle_dialog)
-                client = page.context.new_cdp_session(
-                    page
-                )  # talk to chrome devtools
-                if observation_type == "accessibility_tree":
-                    client.send("Accessibility.enable")
-                page.client = client  # type: ignore # TODO[shuyanzh], fix this hackey client
-                page.goto(url)
-            # set the first page as the current page
-            page = context.pages[0]
-            page.bring_to_front()
-        else:
-            page = context.new_page()
+            #start_urls = start_url.split(" |AND| ")
+            #for url in start_urls:
+            page = await context.new_page()
             page.on("dialog", handle_dialog)
-            client = page.context.new_cdp_session(page)
+            client = await page.context.new_cdp_session(
+                page
+            )  # talk to chrome devtools
             if observation_type == "accessibility_tree":
-                client.send("Accessibility.enable")
+                await client.send("Accessibility.enable")
+            page.client = client  # type: ignore # TODO[shuyanzh], fix this hackey client
+            await page.context.add_cookies(cookies_to_add)
+            await page.goto(start_url)
+            # set the first page as the current page
+            #page = context.pages[0]
+            #await page.bring_to_front()
+        else:
+            page = await context.new_page()
+            page.on("dialog", handle_dialog)
+            client = await page.context.new_cdp_session(page)
+            if observation_type == "accessibility_tree":
+                await client.send("Accessibility.enable")
             page.client = client  # type: ignore
 
         """
@@ -162,7 +126,7 @@ def run():
                                         context_manager=context_manager)
         """
         env = DefaultEnviromentWrapper(
-            objective=task_config["intent"],
+            objective=task,
             url=start_url,
             max_browser_rows=config.env.max_browser_rows, 
             max_steps=config.max_steps, 
@@ -175,7 +139,7 @@ def run():
             playwright=playwright,
             page=page,
             context=context,
-            context_manager=context_manager,
+            #context_manager=context_manager,
         )
         
         agent = agent_init()
@@ -185,9 +149,9 @@ def run():
         # status = agent.act(objective=objective, env=env)
 
         # Run AgentOccam agent with ActionEngine compatibility
-        agent.pre_execute_action(objective, env)
+        await agent.pre_execute_action(objective, env)
         while(not agent.is_completed(env)):
-            status = agent.execute_action(env)
+            status = await agent.execute_action(env)
 
         env.close()
 
@@ -220,4 +184,4 @@ def run():
             )
     
 if __name__ == "__main__":
-    run()
+    asyncio.run(run()) # Non-functional

@@ -9,7 +9,7 @@ from gymnasium import Env
 from gymnasium.spaces import Box, Text
 from playwright.async_api import Page, ViewportSize, async_playwright
 
-from .actions import Action, aexecute_action, get_action_space
+from .actions import Action, get_action_space
 from .utils import DetachedPage, png_bytes_to_numpy
 
 

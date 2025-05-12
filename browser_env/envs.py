@@ -12,13 +12,11 @@ from beartype import beartype
 from beartype.door import is_bearable
 from gymnasium import Env
 from gymnasium.spaces import Box, Text
-from playwright.sync_api import (
+from playwright.async_api import (
     CDPSession,
     Page,
-    Playwright,
     ViewportSize,
     expect,
-    sync_playwright,
 )
 
 from .actions import Action, execute_action, get_action_space
@@ -141,8 +139,8 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
     def get_page_client(self, page: Page) -> CDPSession:
         return page.client  # type: ignore
 
-    def _get_obs(self) -> dict[str, Observation]:
-        obs = self.observation_handler.get_observation(
+    async def _get_obs(self) -> dict[str, Observation]:
+        obs = await self.observation_handler.get_observation(
             self.page, self.get_page_client(self.page)
         )
         return obs
@@ -152,7 +150,7 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         return metadata
 
     @beartype
-    def reset(
+    async def reset(
         self,
         *,
         seed: int | None = None,
@@ -180,9 +178,9 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         if self.sleep_after_execution > 0:
             time.sleep(self.sleep_after_execution)
             
-        images = self.modify_page()
+        images = await self.modify_page()
 
-        observation = self._get_obs()
+        observation = await self._get_obs()
         observation_metadata = self._get_obs_metadata()
         info = {
             "page": DetachedPage(self.page.url, ""),
@@ -197,11 +195,11 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         if self.save_trace_enabled:
             self.context.tracing.stop(path=trace_path)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         if self.reset_finished and self.context_manager:
-            self.context_manager.__exit__()
+            await self.context_manager.__exit__()
 
-    def step(
+    async def step(
         self, action: Action
     ) -> tuple[dict[str, Observation], float, bool, bool, dict[str, Any]]:
         if not self.reset_finished:
@@ -210,7 +208,7 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         success = False
         fail_error = ""
         try:
-            self.page = execute_action(
+            self.page = await execute_action(
                 action,
                 self.page,
                 self.context,
@@ -225,13 +223,13 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         if self.sleep_after_execution > 0:
             time.sleep(self.sleep_after_execution)
 
-        images = self.modify_page()
+        images = await self.modify_page()
         
-        observation = self._get_obs()
+        observation = await self._get_obs()
         observation_metadata = self._get_obs_metadata()
 
         info = {
-            "page": DetachedPage(self.page.url, self.page.content()),
+            "page": DetachedPage(self.page.url, await self.page.content()),
             "fail_error": fail_error,
             "observation_metadata": observation_metadata,
             "images": images,
@@ -246,26 +244,26 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         )
         return msg
 
-    def modify_page(self):
-        self.page.wait_for_timeout(500)
+    async def modify_page(self):
+        await self.page.wait_for_timeout(500)
         try:
-            self.page.evaluate(remove_id_script)
+            await self.page.evaluate(remove_id_script)
         except:
             pass
         
         suffix = getattr(self.global_config, "logname", "")
         if suffix:
-            img_bytes = self.page.screenshot(path=f"output/screenshot-{suffix}.png", full_page=True)
+            img_bytes = await self.page.screenshot(path=f"output/screenshot-{suffix}.png", full_page=True)
         else:
-            img_bytes = self.page.screenshot(path="output/screenshot_raw.png")
+            img_bytes = await self.page.screenshot(path="output/screenshot_raw.png")
         raw_image = base64.b64encode(img_bytes).decode()
         
-        self.page.evaluate(mix_marker_script)
-        self.page.wait_for_timeout(100)
+        await self.page.evaluate(mix_marker_script)
+        await self.page.wait_for_timeout(100)
         
         # get all clickable elements
         start_id = 0
-        elem_items, start_id = self.page.evaluate(get_rect_script, {
+        elem_items, start_id = await self.page.evaluate(get_rect_script, {
             "selector": ".possible-clickable-element",
             "startIndex": start_id
         })
@@ -280,14 +278,14 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         items = elem_items + ocr_items
         
         # mark our own labels and get the images
-        items = self.page.evaluate(label_marker_script, items)
+        items = await self.page.evaluate(label_marker_script, items)
         if suffix:
-            img_bytes = self.page.screenshot(path=f"output/marked-{suffix}.png", full_page=True)
+            img_bytes = await self.page.screenshot(path=f"output/marked-{suffix}.png", full_page=True)
         else:
-            img_bytes = self.page.screenshot(path="output/marked.png")
+            img_bytes = await self.page.screenshot(path="output/marked.png")
         marked_image = base64.b64encode(img_bytes).decode()
         
-        self.page.evaluate(remove_label_mark_script)
+        await self.page.evaluate(remove_label_mark_script)
         
         return {
             "raw_image": raw_image,
