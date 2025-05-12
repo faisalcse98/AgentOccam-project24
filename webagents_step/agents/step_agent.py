@@ -1,6 +1,6 @@
-from webagents_step.agents.agent import Agent
-from webagents_step.utils.stack import Stack
-from webagents_step.agents.prompt_agent import PromptAgent
+from ...webagents_step.agents.agent import Agent
+from ...webagents_step.utils.stack import Stack
+from ...webagents_step.agents.prompt_agent import PromptAgent
 
 from typing import List, Dict
 import re

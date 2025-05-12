@@ -1,6 +1,6 @@
-from webagents_step.agents.agent import Agent
+from ...webagents_step.agents.agent import Agent
 from typing import List
-from webagents_step.utils.llm import fill_prompt_template, construct_llm_message_openai, call_openai_llm, parse_action_reason, calculate_cost_openai, call_anthropic_llm
+from ...webagents_step.utils.llm import fill_prompt_template, construct_llm_message_openai, call_openai_llm, parse_action_reason, calculate_cost_openai, call_anthropic_llm
 
 class PromptAgent(Agent):
     def __init__(self, max_actions: int = 10, verbose: bool = False, logging: bool = False, 

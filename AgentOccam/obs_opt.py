@@ -1,5 +1,5 @@
 import re
-from browser_env.processors import TreeNode
+from ..browser_env.processors import TreeNode
 from functools import partial
 
 RETAINED_PROPERTIES = ["required", "disabled", "checked", "valuemin", "valuemax", "valuetext", "selected", "page_dialog_message"]
