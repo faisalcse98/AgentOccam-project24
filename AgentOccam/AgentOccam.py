@@ -252,13 +252,13 @@ class QAActor(Agent):
     def get_online_input(self):
         return [("text", self.prompt_template["input_template"].replace("{current_observation}", self.get_observation_text()).replace("{objective}", self.objective))]
     def get_action(self, instruction, online_input):
-        model_response = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+        model_response, metrics = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
         action_elements = self.parse_elements(text=model_response, key_list=self.config.output)
         action = action_elements["response"]
         action_elements["action"] = f"note [{action}]"
         action_elements["instruction"] = instruction
         action_elements["input"] = online_input
-        return model_response, action_elements
+        return model_response, action_elements, metrics
     
 class PlanningActor(Agent):
     def __init__(self, config, objective, prompt_template):
@@ -279,14 +279,14 @@ class PlanningActor(Agent):
         return None
     
     def get_action(self, instruction, online_input):
-        model_response = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+        model_response, metrics = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
         action_elements = self.parse_elements(text=model_response, key_list=self.config.output)
         action_elements["action"] = copy.deepcopy(action_elements["plan"])
         del action_elements["plan"]
         action_elements["reason"] = "N/A"
         action_elements["instruction"] = instruction
         action_elements["input"] = online_input
-        return model_response, action_elements
+        return model_response, action_elements, metrics
 
 class ReflectionActor(Agent):
     def __init__(self, config, objective, prompt_template):
@@ -316,11 +316,11 @@ class ReflectionActor(Agent):
         return None
     
     def get_action(self, instruction, online_input):
-        model_response = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+        model_response, metrics = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
         action_elements = self.parse_elements(text=model_response, key_list=self.config.output)
         action_elements["instruction"] = instruction
         action_elements["input"] = online_input
-        return model_response, action_elements
+        return model_response, action_elements, metrics
 
 IDENTITY_CLASS_MAP = {
     "QA": QAActor,
@@ -902,11 +902,12 @@ class Actor(Agent):
         return action_elements
 
     def predict_action(self, criticism_elements):
+        metrics = {}
         if self.config.debug > 1:
             action_elements = {k: "" for k in self.config.output}
             human_input = input("ACTION: ")
             action_elements["action"] = human_input
-            return [action_elements]
+            return [action_elements], metrics
         
         self.pre_process_atomic_actions()
         instruction = self.get_actor_instruction()
@@ -919,11 +920,14 @@ class Actor(Agent):
             invalid_actions = False
             while not get_valid_actions:
                 if repetitive_note:
-                    model_response = self.call_model_with_message(system_prompt=instruction+"\nGenerating the command `note [{}]` will be severely punished! Don't generate repetitive notes!".format(getattr(self, "note_buffer", "")), messages=self.arrange_message_for_model(online_input))
+                    model_response, current_metrics = self.call_model_with_message(system_prompt=instruction+"\nGenerating the command `note [{}]` will be severely punished! Don't generate repetitive notes!".format(getattr(self, "note_buffer", "")), messages=self.arrange_message_for_model(online_input))
+                    merge_metrics(metrics, current_metrics)
                 elif invalid_actions:
-                    model_response = self.call_model_with_message(system_prompt=instruction+"\nGenerating the command `{}` will be severely punished! Don't generate invalid actions! We don't have that element id in the current observation!".format(invalid_action_str), messages=self.arrange_message_for_model(online_input))
+                    model_response, current_metrics = self.call_model_with_message(system_prompt=instruction+"\nGenerating the command `{}` will be severely punished! Don't generate invalid actions! We don't have that element id in the current observation!".format(invalid_action_str), messages=self.arrange_message_for_model(online_input))
+                    merge_metrics(metrics, current_metrics)
                 else:
-                    model_response = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+                    model_response, current_metrics = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+                    merge_metrics(metrics, current_metrics)
                 action_elements = self.parse_elements(text=model_response, key_list=self.config.output)
                 action_elements = self.parse_action_from_action_candidates(action_elements=action_elements)
                 assert not ("action" in action_elements.keys() and any("action candidates" in k for k in action_elements.keys()))
@@ -978,9 +982,11 @@ class Actor(Agent):
                 invalid_actions = False
                 while not get_valid_actions:
                     if invalid_actions:
-                        model_response, action_elements = identity.get_action(identity_instruction+"\nGenerating the command `{}` will be severely punished! Don't generate invalid actions! We don't have that element id in the current observation!".format(invalid_action_str), identity_online_input)
+                        model_response, action_elements, current_metrics = identity.get_action(identity_instruction+"\nGenerating the command `{}` will be severely punished! Don't generate invalid actions! We don't have that element id in the current observation!".format(invalid_action_str), identity_online_input)
+                        merge_metrics(metrics, current_metrics)
                     else:
-                        model_response, action_elements = identity.get_action(identity_instruction, identity_online_input)      
+                        model_response, action_elements, current_metrics = identity.get_action(identity_instruction, identity_online_input)      
+                        merge_metrics(metrics, current_metrics)
                     if self.are_valid_actions(action_elements["action"]):
                         get_valid_actions = True
                         model_response_list.append(model_response)
@@ -998,7 +1004,7 @@ class Actor(Agent):
                 if human_input != "":
                     action_element_list[i]["action"] = human_input
 
-        return action_element_list
+        return action_element_list, metrics
     
     def finalize_action(self, action_elements):
         self.get_observation_highlight(action_elements=action_elements)
@@ -1104,7 +1110,7 @@ class Critic(Agent):
         
         instruction = self.get_critic_instruction()
         online_input = self.get_online_input()
-        model_response = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+        model_response, metrics = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
         self.verbose(instruction=instruction, online_input=online_input, model_response=model_response)
 
         criticism_elements = self.parse_elements(text=model_response, key_list=self.config.output) # key_list=self.config.output)
@@ -1116,7 +1122,7 @@ class Critic(Agent):
                 if not human_input == "":
                     criticism_elements[k] = human_input
         
-        return criticism_elements
+        return criticism_elements, metrics
 
 class Judge(Agent):
     def __init__(self, config, objective, prompt_template):
@@ -1208,9 +1214,9 @@ class Judge(Agent):
     def judge(self, action_element_list):
         action_element_list = self.flatten_action_element_list(action_element_list)
         if not self.config.mode or self.config.debug > 1:
-            return action_element_list[0], {}
+            return action_element_list[0], {}, {}
         if all(action_elements["action"]==action_element_list[0]["action"] for action_elements in action_element_list):
-            return action_element_list[0], {}
+            return action_element_list[0], {}, {}
         
         def deduplicate_action_element_list_strict(lst): # deduplicate, remove action_elements with only note or stop command
             seen = set()
@@ -1253,24 +1259,24 @@ class Judge(Agent):
             if len(stop_list) >= 0.6 * len(action_element_list):
                 stop_action_choice = max([s[0] for s in stop_list], key=len)
                 stop_action_id = [s[1] for s in stop_list if s[0]==stop_action_choice][0]
-                return action_element_list[stop_action_id], {}
+                return action_element_list[stop_action_id], {}, {}
             if not deduplicated_action_element_list:
                 note_action_choice = max([n[0] for n in note_list], key=len)
                 note_action_id = [n[1] for n in note_list if n[0]==note_action_choice][0]
                 action_elements = action_element_list[note_action_id]
                 action_elements["action"] = note_action_choice
-                return action_elements, {}
+                return action_elements, {}, {}
             elif len(deduplicated_action_element_list) == 1:
                 action_elements = deduplicated_action_element_list[0]
                 note_action_choice = max([n[0] for n in note_list], key=len)
                 action_elements["action"] = note_action_choice + "\n" + action_elements["action"]
-                return action_elements, {}
+                return action_elements, {}, {}
         else:
             deduplicated_action_element_list = deduplicate_action_element_list(action_element_list)
         
         instruction = self.get_judge_instruction()
         online_input = self.get_online_input(deduplicated_action_element_list)
-        model_response = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
+        model_response, metrics = self.call_model_with_message(system_prompt=instruction, messages=self.arrange_message_for_model(online_input))
         self.verbose(instruction=instruction, online_input=online_input, model_response=model_response)
 
         judgement_elements = self.parse_elements(text=model_response, key_list=self.config.output) # key_list=self.config.output)
@@ -1289,9 +1295,9 @@ class Judge(Agent):
                 note_action_choice = max([n[0] for n in note_list], key=len)
                 if note_action_choice:
                     selected_action_elements["action"] = note_action_choice + "\n" + selected_action_elements["action"]
-            return selected_action_elements, judgement_elements
+            return selected_action_elements, judgement_elements, metrics
         except:
-            return action_element_list[0], judgement_elements
+            return action_element_list[0], judgement_elements, metrics
 
 class AgentOccam:
     def __init__(self,
@@ -1350,13 +1356,16 @@ class AgentOccam:
         )
         
     def predict_action(self):
+        metrics = {}
         self.critic.update_actor_basic_info(step=self.get_step(), planning_specifications=self.actor.get_planning_specifications(), navigation_specifications=self.actor.get_navigation_specifications(), interaction_history=self.actor.get_interaction_history(interaction_history_config=self.critic.config.interaction_history), previous_plans=self.actor.get_previous_plans(verbose=True))
         criticism_elements = self.critic.get_criticism_elements() if not self.get_step()==0 else {}
-        action_element_list = self.actor.predict_action(criticism_elements=criticism_elements)
+        action_element_list, current_metrics = self.actor.predict_action(criticism_elements=criticism_elements)
+        merge_metrics(metrics, current_metrics)
         self.judge.update_actor_basic_info(step=self.get_step(), planning_specifications=self.actor.get_planning_specifications(), navigation_specifications=self.actor.get_navigation_specifications(), interaction_history=self.actor.get_interaction_history(interaction_history_config=self.judge.config.interaction_history), previous_plans=self.actor.get_previous_plans(verbose=True), planning_command=self.actor.config.planning_command, navigation_command=self.actor.config.navigation_command)
-        selected_action_elements, judgement_elements = self.judge.judge(action_element_list)
+        selected_action_elements, judgement_elements, current_metrics = self.judge.judge(action_element_list)
+        merge_metrics(metrics, current_metrics)
         selected_action_elements = self.actor.finalize_action(selected_action_elements)
-        return {**selected_action_elements, **{"critic:"+k: criticism_elements[k] for k in criticism_elements.keys()}, **{"judge:"+k: judgement_elements[k] for k in judgement_elements.keys()}}, action_element_list
+        return {**selected_action_elements, **{"critic:"+k: criticism_elements[k] for k in criticism_elements.keys()}, **{"judge:"+k: judgement_elements[k] for k in judgement_elements.keys()}}, action_element_list, metrics
     
     def update_online_state(self, url, observation):
         self.online_url = url
@@ -1392,10 +1401,12 @@ class AgentOccam:
         self.actor.update_online_state(url=url, observation=observation)
         self.critic.update_online_state(url=url, observation=observation)
         self.judge.update_online_state(url=url, observation=observation)
-        action_elements, action_element_list = self.predict_action()
+        action_elements, action_element_list, metrics = self.predict_action()
         action = action_elements["action"]
         navigation_action = action_elements["action"] if not action_elements.get("navigation action", "") else action_elements.get("navigation action", "")
         status = await env.step(navigation_action)
+        if isinstance(status, dict):
+            status.update(metrics)
         if navigation_action and self.is_navigation(action=navigation_action) and status == False: # means invalid action
             flaw_node = self.actor.active_node
             flaw_node.note.append(f"STEP {self.get_step()}: You generate action \"{action}\", which has INVALID syntax. Strictly follow the action specifications.")          
@@ -1451,3 +1462,11 @@ class AgentOccam:
             except:
                 pass
         self.trajectory.append(data_to_log)
+
+def merge_metrics(metrics: dict, current_metrics: dict):
+    for k in current_metrics.keys():
+        if k not in metrics.keys():
+            metrics[k] = current_metrics[k]
+        else:
+            metrics[k] += current_metrics[k]
+    return metrics
