@@ -136,7 +136,9 @@ def call_gpt(prompt, model_id="gpt-3.5-turbo", system_prompt=DEFAULT_SYSTEM_PROM
                 stop=None
             )
             
-            return response.choices[0].message.content.strip()
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
+            return response.choices[0].message.content.strip(), {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "lm_calls": 1}
         except openai.AuthenticationError as e:
             print(e)
             return None
@@ -170,7 +172,9 @@ def call_azureopenai(prompt, system_prompt=DEFAULT_SYSTEM_PROMPT):
                 stop=None
             )
             
-            return response.choices[0].message.content.strip()
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
+            return response.choices[0].message.content.strip(), {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "lm_calls": 1}
         except openai.AuthenticationError as e:
             print(e)
             return None
@@ -313,7 +317,7 @@ def call_gpt_with_messages(messages, model_id="gpt-3.5-turbo", system_prompt=DEF
                 }
 
                 response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-                return response.json()["choices"][0]["message"].get("content", "").strip()
+                return response.json()["choices"][0]["message"].get("content", "").strip(), {}
             else:
                 response = client.chat.completions.create(
                     model=model_id,
@@ -324,7 +328,9 @@ def call_gpt_with_messages(messages, model_id="gpt-3.5-turbo", system_prompt=DEF
                     presence_penalty=0,
                     stop=None
                 )
-                return response.choices[0].message.content.strip()
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+                return response.choices[0].message.content.strip(), {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "lm_calls": 1}
         except openai.AuthenticationError as e:
             print(e)
             return None
@@ -354,7 +360,9 @@ def call_azureopenai_with_messages(messages, system_prompt=DEFAULT_SYSTEM_PROMPT
                 presence_penalty=0,
                 stop=None
             )
-            return response.choices[0].message.content.strip()
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
+            return response.choices[0].message.content.strip(), {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "lm_calls": 1}
         except openai.AuthenticationError as e:
             print(e)
             return None
