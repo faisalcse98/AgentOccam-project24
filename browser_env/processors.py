@@ -182,7 +182,7 @@ class TreeNode:
 
 
 class ObservationProcessor:
-    def process(self, page: Page, client: CDPSession) -> Observation:
+    async def process(self, page: Page, client: CDPSession) -> Observation:
         raise NotImplementedError
 
 
@@ -981,8 +981,10 @@ class TextObervationProcessor(ObservationProcessor):
             print('[parse]', time.time() - stt)
             
             window_height = await page.evaluate("window.innerHeight")
-            page_height = await page.evaluate('document.documentElement.scrollHeight') / window_height
-            position = await page.evaluate("window.scrollY") / window_height
+            scroll_height = await page.evaluate('document.documentElement.scrollHeight')
+            page_height = scroll_height / window_height
+            scrolly_height = await page.evaluate("window.scrollY")
+            position = scrolly_height / window_height
             
             self.obs_nodes_info = obs_nodes_info
             self.meta_data["obs_nodes_info"] = obs_nodes_info
@@ -1055,11 +1057,13 @@ class ImageObservationProcessor(ObservationProcessor):
 
     async def process(self, page: Page, client: CDPSession, context: str) -> npt.NDArray[np.uint8]:
         try:
-            screenshot = png_bytes_to_numpy(await page.screenshot(full_page=(not self.current_viewport_only)))
+            screenshot_bytes = await page.screenshot(full_page=(not self.current_viewport_only))
+            screenshot = png_bytes_to_numpy(screenshot_bytes)
             screenshot = screenshot[:2*screenshot.shape[1], :, :]
         except:
             await page.wait_for_event("load")
-            screenshot = png_bytes_to_numpy(await page.screenshot(full_page=(not self.current_viewport_only)))
+            screenshot_bytes = await page.screenshot(full_page=(not self.current_viewport_only))
+            screenshot = png_bytes_to_numpy(screenshot_bytes)
         return screenshot
 
 
