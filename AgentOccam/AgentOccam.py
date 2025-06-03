@@ -16,11 +16,13 @@ import os
 from functools import partial
 import random
 import json
+import logging
 
 import warnings
 warnings.filterwarnings("ignore")
 
 
+LOGGER = logging.getLogger(__name__)
 DEFAULT_DOCUMENTED_INTERACTION_ELEMENTS = ["observation", "action"]
 DEFAULT_ONLINE_INTERACTION_ELEMENTS = ["url", "observation"]
 MODEL_FAMILIES = ["claude", "mistral", "cohere", "llama", "titan", "gpt", "gemini"]
@@ -1384,10 +1386,15 @@ class AgentOccam:
         return self.trajectory
 
     async def pre_execute_action(self, objective: str, env: BaseEnviromentWrapper):
+        LOGGER.debug("Start pre_execute_action")
+        LOGGER.debug("Start env reset")
         await env.reset()
+        LOGGER.debug("Finish env reset")
         self.objective = objective
         self.sites = env.get_sites()
+        LOGGER.debug("Start env observation")
         observation = env.observation()
+        LOGGER.debug("Finish env observation")
         url = env.get_url()
         self.update_online_state(url=url, observation=observation)
         self.init_actor()
@@ -1395,7 +1402,10 @@ class AgentOccam:
         self.init_judge()
 
     async def execute_action(self, env: BaseEnviromentWrapper):
+        LOGGER.debug("Start execute_action")
+        LOGGER.debug("Start env observation")
         observation = env.observation()
+        LOGGER.debug("Finish env observation")
         url = env.get_url()
         self.update_online_state(url=url, observation=observation)
         self.actor.update_online_state(url=url, observation=observation)

@@ -14,6 +14,10 @@ from ..AgentOccam.obs_opt import (
     prune_tree,
     translate_node_to_str,
 )
+import logging
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class BaseEnviromentWrapper(ABC):
@@ -99,7 +103,9 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
         self.trajectory: Trajectory = []
         
     async def reset(self):
+        LOGGER.debug("Start browser env reset")
         self.obs, self.info = await self.brower_env.reset()
+        LOGGER.debug("Finish browser env reset")
 
     async def close(self):
         await self.brower_env.close()

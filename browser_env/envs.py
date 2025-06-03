@@ -30,6 +30,11 @@ from .utils import (
 
 import base64
 from .scripts import *
+import logging
+
+
+LOGGER = logging.getLogger(__name__)
+
 
 @dataclass
 class PlaywrightScript:
@@ -208,12 +213,14 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         success = False
         fail_error = ""
         try:
+            LOGGER.debug("Start executing action: %s", action)
             self.page = await execute_action(
                 action,
                 self.page,
                 self.context,
                 self.observation_handler.action_processor,
             )
+            LOGGER.debug("Finish executing action: %s", action)
             success = True
         except Exception as e:
             fail_error = str(e)
@@ -223,9 +230,13 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         if self.sleep_after_execution > 0:
             time.sleep(self.sleep_after_execution)
 
+        LOGGER.debug("Start modifying page")
         images = await self.modify_page()
+        LOGGER.debug("Finish modifying page")
         
+        LOGGER.debug("Start ATX observation")
         observation = await self._get_obs()
+        LOGGER.debug("Finish ATX observation")
         observation_metadata = self._get_obs_metadata()
 
         info = {
