@@ -264,9 +264,13 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         
         suffix = getattr(self.global_config, "logname", "")
         if suffix:
-            img_bytes = await self.page.screenshot(path=f"output/screenshot-{suffix}.png", full_page=True)
+            LOGGER.debug(f"Start taking screenshot: output/screenshot-{suffix}.png")
+            img_bytes = await self.page.screenshot(path=f"output/screenshot-{suffix}.png", full_page=True, timeout=30000)
+            LOGGER.debug(f"Finish taking screenshot: output/screenshot-{suffix}.png")
         else:
-            img_bytes = await self.page.screenshot(path="output/screenshot_raw.png")
+            LOGGER.debug(f"Start taking screenshot: output/screenshot_raw.png")
+            img_bytes = await self.page.screenshot(path="output/screenshot_raw.png", timeout=30000)
+            LOGGER.debug(f"Finish taking screenshot: output/screenshot_raw.png")
         raw_image = base64.b64encode(img_bytes).decode()
         
         await self.page.evaluate(mix_marker_script)
@@ -291,9 +295,13 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         # mark our own labels and get the images
         items = await self.page.evaluate(label_marker_script, items)
         if suffix:
-            img_bytes = await self.page.screenshot(path=f"output/marked-{suffix}.png", full_page=True)
+            LOGGER.debug(f"Start taking screenshot: output/marked-{suffix}.png")
+            img_bytes = await self.page.screenshot(path=f"output/marked-{suffix}.png", full_page=True, timeout=30000)
+            LOGGER.debug(f"Finish taking screenshot: output/marked-{suffix}.png")
         else:
-            img_bytes = await self.page.screenshot(path="output/marked.png")
+            LOGGER.debug(f"Start taking screenshot: output/marked.png")
+            img_bytes = await self.page.screenshot(path="output/marked.png", timeout=30000)
+            LOGGER.debug(f"Finish taking screenshot: output/marked.png")
         marked_image = base64.b64encode(img_bytes).decode()
         
         await self.page.evaluate(remove_label_mark_script)

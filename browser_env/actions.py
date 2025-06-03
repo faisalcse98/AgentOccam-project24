@@ -932,8 +932,7 @@ async def execute_mouse_hover(left: float, top: float, page: Page) -> None:
     viewport_size = page.viewport_size
     assert viewport_size
     await page.mouse.move(
-        left * viewport_size["width"], top * viewport_size["height"],
-        timeout=TIMEOUT5
+        left * viewport_size["width"], top * viewport_size["height"]
     )
 
 
@@ -942,8 +941,7 @@ async def execute_mouse_click(left: float, top: float, page: Page) -> None:
     viewport_size = page.viewport_size
     assert viewport_size
     await page.mouse.click(
-        left * viewport_size["width"], top * viewport_size["height"],
-        timeout=TIMEOUT5
+        left * viewport_size["width"], top * viewport_size["height"]
     )
 
 
