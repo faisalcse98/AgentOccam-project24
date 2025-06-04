@@ -924,7 +924,7 @@ async def execute_key_press(key: str, page: Page) -> None:
     """Press a key."""
     if "Meta" in key and "Mac" not in await page.evaluate("navigator.platform"):
         key = key.replace("Meta", "Control")
-    await page.keyboard.press(key, timeout=TIMEOUT5)
+    await page.keyboard.press(key)
 
 
 async def execute_mouse_hover(left: float, top: float, page: Page) -> None:
@@ -947,7 +947,7 @@ async def execute_mouse_click(left: float, top: float, page: Page) -> None:
 
 async def execute_keyboard_type(text: str, page: Page) -> None:
     """Fill the focused element with text."""
-    await page.keyboard.type(text, timeout=TIMEOUT5)
+    await page.keyboard.type(text)
 
 
 async def execute_click_current(page: Page) -> None:
@@ -968,12 +968,12 @@ async def execute_type(keys: list[int], page: Page) -> None:
     """Send keystrokes to the focused element."""
     if _id2key[keys[-1]] == "\n":
         text = "".join([_id2key[key] for key in keys[:-1]])
-        await page.keyboard.type(text, timeout=TIMEOUT5)
+        await page.keyboard.type(text)
         time.sleep(1)
         await page.keyboard.press("Enter")
     else:
         text = "".join([_id2key[key] for key in keys])
-        await page.keyboard.type(text, timeout=TIMEOUT5)
+        await page.keyboard.type(text)
 
 
 async def execute_focus(
@@ -1197,9 +1197,9 @@ async def execute_action(
                     element_id = action["element_id"]
                     element_center = await obseration_processor.get_element_center(element_id, page)  # type: ignore[attr-defined]
                     await execute_mouse_click(element_center[0], element_center[1], page)
-                    await page.keyboard.press("Control+A", timeout=TIMEOUT5)
+                    await page.keyboard.press("Control+A")
                     for _ in range(1):
-                        await page.keyboard.press("Backspace", timeout=TIMEOUT5)
+                        await page.keyboard.press("Backspace")
                     await execute_type(action["text"], page)
             elif action["element_role"] and action["element_name"]:
                 element_role = int(action["element_role"])
