@@ -1412,6 +1412,7 @@ class AgentOccam:
         self.critic.update_online_state(url=url, observation=observation)
         self.judge.update_online_state(url=url, observation=observation)
         action_elements, action_element_list, metrics = self.predict_action()
+        LOGGER.debug("Next action is predicted.")
         action = action_elements["action"]
         navigation_action = action_elements["action"] if not action_elements.get("navigation action", "") else action_elements.get("navigation action", "")
         status = await env.step(navigation_action)
