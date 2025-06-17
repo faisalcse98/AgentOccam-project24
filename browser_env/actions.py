@@ -54,6 +54,9 @@ from browser_env.processors import (
 )
 
 
+TIMEOUT5=5000
+
+
 async def is_in_viewport(
     element: Locator, viewport: ViewportSize, threshold: float = 0.3
 ) -> bool:
@@ -958,7 +961,7 @@ async def execute_click_current(page: Page) -> None:
             if locator_count:
                 break
     await locators.click()
-    await page.wait_for_load_state("load")
+    await page.wait_for_load_state("load", timeout=TIMEOUT5)
 
 
 async def execute_type(keys: list[int], page: Page) -> None:
@@ -1120,21 +1123,21 @@ async def execute_action(
                 node = obseration_processor.get_node_info_by_element_id(int(element_id)) # TODO: possible async
                 if node and (node.role=="menuitem" or node.role=="option"):
                     try:
-                        await page.get_by_role(node.role, name=node.name, exact=True).click()
+                        await page.get_by_role(node.role, name=node.name, exact=True).click(delay=10, force=True, timeout=TIMEOUT5)
                     except:
                         try:
-                            await page.get_by_role(node.role, name=node.name).click()
+                            await page.get_by_role(node.role, name=node.name).click(delay=10, force=True, timeout=TIMEOUT5)
                         except:
                             try:
-                                await page.get_by_role(node.parent.role, name=node.parent.name, exact=True).select_option(node.name)
+                                await page.get_by_role(node.parent.role, name=node.parent.name, exact=True).select_option(node.name, force=True, timeout=TIMEOUT5)
                             except:
-                                await page.get_by_role(node.parent.role, name=node.parent.name).select_option(node.name)
+                                await page.get_by_role(node.parent.role, name=node.parent.name).select_option(node.name, force=True, timeout=TIMEOUT5)
                 else:
                     try:
-                        await page.get_by_role(node.role, name=node.name, exact=True).click()
+                        await page.get_by_role(node.role, name=node.name, exact=True).click(delay=10, force=True, timeout=TIMEOUT5)
                     except Exception as e:
                         try:
-                            await page.get_by_role(node.role, name=node.name).click()
+                            await page.get_by_role(node.role, name=node.name).click(delay=10, force=True, timeout=TIMEOUT5)
                         except Exception as e:
                             element_id = action["element_id"]
                             element_center = await obseration_processor.get_element_center(element_id, page)  # type: ignore[attr-defined]
@@ -1178,18 +1181,18 @@ async def execute_action(
                     node = obseration_processor.get_node_info_by_element_id(int(element_id)) # TODO: possible async
                     try:
                         if press_enter:
-                            await page.get_by_role(node.role, name=node.name, exact=True).fill("".join([_id2key[idx] for idx in action["text"][:-1]]))
+                            await page.get_by_role(node.role, name=node.name, exact=True).fill("".join([_id2key[idx] for idx in action["text"][:-1]]), force=True, timeout=TIMEOUT5)
                             time.sleep(1)
                             await page.keyboard.press("Enter")
                         else:
-                            await page.get_by_role(node.role, name=node.name, exact=True).fill("".join([_id2key[idx] for idx in action["text"]]))
+                            await page.get_by_role(node.role, name=node.name, exact=True).fill("".join([_id2key[idx] for idx in action["text"]]), force=True, timeout=TIMEOUT5)
                     except:
                         if press_enter:
-                            await page.get_by_role(node.role, name=node.name).fill("".join([_id2key[idx] for idx in action["text"][:-1]]))
+                            await page.get_by_role(node.role, name=node.name).fill("".join([_id2key[idx] for idx in action["text"][:-1]]), force=True, timeout=TIMEOUT5)
                             time.sleep(1)
                             await page.keyboard.press("Enter")
                         else:
-                            await page.get_by_role(node.role, name=node.name).fill("".join([_id2key[idx] for idx in action["text"]]))
+                            await page.get_by_role(node.role, name=node.name).fill("".join([_id2key[idx] for idx in action["text"]]), force=True, timeout=TIMEOUT5)
                 else:
                     element_id = action["element_id"]
                     element_center = await obseration_processor.get_element_center(element_id, page)  # type: ignore[attr-defined]
@@ -1224,16 +1227,16 @@ async def execute_action(
             page = await browser_ctx.new_page()
             page.client = await page.context.new_cdp_session(page)  # type: ignore[attr-defined]
         case ActionTypes.GO_BACK:
-            await page.go_back()
+            await page.go_back(timeout=TIMEOUT5)
             if "about:blank" in page.url:
-                await page.go_forward()
+                await page.go_forward(timeout=TIMEOUT5)
         case ActionTypes.GO_FORWARD:
-            await page.go_forward()
+            await page.go_forward(timeout=TIMEOUT5)
         case ActionTypes.GOTO_URL:
             if action["answer"] == "1":
                 page = await browser_ctx.new_page()
                 page.client = await page.context.new_cdp_session(page) 
-            await page.goto(action["url"])
+            await page.goto(action["url"], timeout=TIMEOUT5)
         case ActionTypes.PAGE_CLOSE:
             await page.close()
             if len(browser_ctx.pages) > 0:

@@ -14,6 +14,10 @@ from ..AgentOccam.obs_opt import (
     prune_tree,
     translate_node_to_str,
 )
+import logging
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class BaseEnviromentWrapper(ABC):
@@ -99,7 +103,9 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
         self.trajectory: Trajectory = []
         
     async def reset(self):
+        LOGGER.debug("Start browser env reset")
         self.obs, self.info = await self.brower_env.reset()
+        LOGGER.debug("Finish browser env reset")
 
     async def close(self):
         await self.brower_env.close()
@@ -118,7 +124,9 @@ class DefaultEnviromentWrapper(BaseEnviromentWrapper):
         if self.global_config and self.global_config.env.prune:
             root_node = self.obs["text"][1]
             DOM_root_node = prune_tree(objective=self.objective, root_node=root_node, mode="node")
+            LOGGER.debug(f"Pruned DOM node: {DOM_root_node}")
             DOM_str = translate_node_to_str(node=DOM_root_node, mode="concise")
+            LOGGER.debug(f"Translated DOM string: {DOM_str}")
             return {"text": DOM_str, "image": self.obs["image"], "node": DOM_root_node}
         else:
             browser_content = self.obs["text"][0]

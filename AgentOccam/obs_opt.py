@@ -4,7 +4,7 @@ from functools import partial
 
 RETAINED_PROPERTIES = ["required", "disabled", "checked", "valuemin", "valuemax", "valuetext", "selected", "page_dialog_message"]
 UNWANTED_PROPERTIES = ["focused", "autocomplete", "hasPopup", "expanded", "multiselectable", "orientation", "controls"]
-UNINTERACTIVE_ROLES = ["StaticText", "LabelText", "main", "heading", "LayoutTable", "tabpanel", "LayoutTableRow", "LayoutTableCell", "time", "list", "contentinfo", "table", "row", "rowheader", "columnheader", "gridcell", "caption", "DescriptionList", "DescriptionListTerm", "DescriptionListDetail", "RootWebArea", "rowgroup", "alert"]
+UNINTERACTIVE_ROLES = ["StaticText", "LabelText", "main", "heading", "LayoutTable", "tabpanel", "LayoutTableRow", "LayoutTableCell", "time", "list", "contentinfo", "table", "row", "rowheader", "columnheader", "gridcell", "cell", "caption", "DescriptionList", "DescriptionListTerm", "DescriptionListDetail", "RootWebArea", "rowgroup", "alert"]
 ROLE_REPLACEMENT_DICT = {
     "StaticText": "text",
     "LabelText": "text",
@@ -160,7 +160,7 @@ def action_reformat_table(node:TreeNode):
     if not node.visible:
         return
     def merge_gridcell(gridcell_node:TreeNode):
-        if gridcell_node.role not in ["gridcell", "columnheader", "rowheader", "LayoutTableCell"] or not gridcell_node.visible:
+        if gridcell_node.role not in ["gridcell", "cell", "columnheader", "rowheader", "LayoutTableCell"] or not gridcell_node.visible:
             return
         gridcell_buffer = []
         parse_node_descendants(gridcell_node, action_return_visible_node, gridcell_buffer)
@@ -200,7 +200,7 @@ def action_reformat_table(node:TreeNode):
                         new_table_children.append(TreeNode(node_id=row_list[0].node_id, role="row", name="| "+" | ".join(titles)+" |", depth=row_list[0].depth))
                         new_table_children.append(TreeNode(node_id=row_list[0].node_id, role="row", name="| "+" | ".join(["---"]*len(titles))+" |", depth=row_list[0].depth))
                         new_table_children.append(TreeNode(node_id=row_list[0].node_id, role="row", name="| "+" | ".join(values)+" |", depth=row_list[0].depth))
-                    elif row_list[0].children[0].role == "gridcell":
+                    elif row_list[0].children[0].role == "gridcell" or row_list[0].children[0].role == "cell":
                         if new_table_children and any(n.visible for n in new_table_children):
                             new_table_children.append(TreeNode(node_id=row_list[0].node_id, role="row", name="", depth=row_list[0].depth))
                         for row in row_list:
@@ -228,7 +228,7 @@ def action_reformat_table(node:TreeNode):
                         new_table_children = reformat_subtable(row_list=row_list, current_table_children=new_table_children)
                         row_list = [child]
                     row_mode = True
-                elif child.role == "row" and child.children[0].role == "gridcell":
+                elif child.role == "row" and ( child.children[0].role == "gridcell" or child.children[0].role == "cell"):
                     row_list.append(child)
                     row_mode = False
                 elif child.role != "row":
