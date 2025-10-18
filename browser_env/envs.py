@@ -150,6 +150,12 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
         )
         return obs
 
+    async def get_page_obs(self, page: Page) -> dict[str, Observation]:
+        obs = await self.observation_handler.get_observation(
+            page, self.get_page_client(page)
+        )
+        return obs
+
     def _get_obs_metadata(self) -> dict[str, ObservationMetadata]:
         metadata = self.observation_handler.get_observation_metadata()
         return metadata
