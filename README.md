@@ -1,3 +1,11 @@
+# About this repository
+
+Public repository forked from AgentOccam. Used as a submodule to support a fallback engine at Project24_LI.
+
+Major features added:
+* Asynchronous interfaces to match with Project24_LI's asynchronous Playwright API usage.
+* Support for Azure OpenAI.
+
 # AgentOccam
 Code for "[AgentOccam: A Simple Yet Strong Baseline for LLM-Based Web Agents](https://arxiv.org/abs/2410.13825)" (ICLR 2025).
 
